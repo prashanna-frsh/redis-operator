@@ -312,39 +312,52 @@ func (r *RedisFailoverHealer) SetSentinelCustomConfig(ip string, rf *redisfailov
 
 // SetRedisCustomConfig will call redis to set the configuration given in config
 func (r *RedisFailoverHealer) SetRedisCustomConfig(address string, rf *redisfailoverv1.RedisFailover) error {
-	r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Debugf("Setting the custom config on redis %s...", address)
+	r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: SetRedisCustomConfig called for address %s", address)
+	r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: CustomConfig content: %v", rf.Spec.Redis.CustomConfig)
+	r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: DisableIPMode: %v", rf.Spec.Redis.DisableIPMode)
 
 	password, err := k8s.GetRedisPassword(r.k8sService, rf)
 	if err != nil {
+		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Errorf("DEBUG: Failed to get Redis password: %v", err)
 		return err
 	}
+	r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Retrieved Redis password successfully")
 
 	// Get memory usage for this Redis pod
+	r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Getting pod memory usage for address %s", address)
 	podMemory, err := r.getRedisPodMemoryUsage(address, rf)
 	if err != nil {
-		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Warningf("Failed to get memory usage for Redis address %s: %v", address, err)
+		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Warningf("DEBUG: Failed to get memory usage for Redis address %s: %v", address, err)
 		// Continue with podMemory = 0, which will skip memory validation
+	} else {
+		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Pod memory usage: %d bytes", podMemory)
 	}
 
 	// Validate and filter maxmemory configuration
+	r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Validating maxmemory config with pod memory %d", podMemory)
 	validatedConfig, err := r.validateMaxMemoryConfig(rf.Spec.Redis.CustomConfig, podMemory, address, rf)
 	if err != nil {
-		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Errorf("maxmemory validation failed for Redis address %s: %v", address, err)
+		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Errorf("DEBUG: maxmemory validation failed for Redis address %s: %v", address, err)
 	}
+	r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Validated config (before replica-announce-ip): %v", validatedConfig)
 
 	// If IP mode is disabled, add replica-announce-ip with the pod's DNS name
 	// This ensures the master sees replicas by their DNS names in INFO replication
 	// Also convert DNS address to IP for connecting to Redis
 	var connectionAddress string
 	if rf.Spec.Redis.DisableIPMode {
+		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: DisableIPMode is enabled, processing replica-announce-ip")
 		// Get pods to find the DNS name for this address
 		pods, err := r.k8sService.GetStatefulSetPods(rf.Namespace, GetRedisName(rf))
 		if err == nil {
+			r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Retrieved %d pods from StatefulSet", len(pods.Items))
 			// Find the pod matching this address and get its DNS name
 			var replicaAnnounceIP string
 			for _, pod := range pods.Items {
 				podAddress := GetPodAddress(&pod, rf)
 				podDNSName := GetPodDNSName(&pod, rf)
+				
+				r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Checking pod %s - podAddress: %s, podDNSName: %s, podIP: %s, target address: %s", pod.Name, podAddress, podDNSName, pod.Status.PodIP, address)
 
 				// Match by DNS name, current pod address, or IP
 				// This handles cases where address might be DNS or IP depending on pod readiness timing
@@ -353,6 +366,7 @@ func (r *RedisFailoverHealer) SetRedisCustomConfig(address string, rf *redisfail
 					podDNSName == address
 
 				if matched {
+					r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Found matching pod %s for address %s", pod.Name, address)
 					// Always use IP for connecting to Redis, even when DisableIPMode is enabled
 					// DNS names are only for Redis-to-Redis communication
 					connectionAddress = pod.Status.PodIP
@@ -360,11 +374,11 @@ func (r *RedisFailoverHealer) SetRedisCustomConfig(address string, rf *redisfail
 					// Get DNS name for this pod
 					if isPodReady(&pod) && pod.Status.PodIP != "" {
 						replicaAnnounceIP = podDNSName
-						r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Debugf("Found matching pod %s for address %s, will connect via IP %s and set replica-announce-ip to %s", pod.Name, address, connectionAddress, replicaAnnounceIP)
+						r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Found matching pod %s for address %s, will connect via IP %s and set replica-announce-ip to %s", pod.Name, address, connectionAddress, replicaAnnounceIP)
 					} else {
 						// Pod not ready yet, skip setting replica-announce-ip
 						// It will be set on next reconciliation when pod is ready
-						r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Debugf("Pod %s not ready yet, skipping replica-announce-ip", pod.Name)
+						r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Pod %s not ready yet (Ready: %v, PodIP: %s), skipping replica-announce-ip", pod.Name, isPodReady(&pod), pod.Status.PodIP)
 						break
 					}
 					break
@@ -374,20 +388,34 @@ func (r *RedisFailoverHealer) SetRedisCustomConfig(address string, rf *redisfail
 			if replicaAnnounceIP != "" && strings.Contains(replicaAnnounceIP, ".svc.cluster.local") {
 				replicaAnnounceConfig := fmt.Sprintf("replica-announce-ip %s", replicaAnnounceIP)
 				validatedConfig = append(validatedConfig, replicaAnnounceConfig)
-				r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("Adding replica-announce-ip %s for Redis pod at %s", replicaAnnounceIP, address)
+				r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Adding replica-announce-ip %s for Redis pod at %s", replicaAnnounceIP, address)
 			} else {
-				r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Warningf("Could not determine replica-announce-ip for address %s", address)
+				r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Could not determine replica-announce-ip for address %s (replicaAnnounceIP: %s)", address, replicaAnnounceIP)
 			}
+		} else {
+			r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Errorf("DEBUG: Failed to get StatefulSet pods: %v", err)
 		}
+	} else {
+		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: DisableIPMode is disabled, skipping replica-announce-ip")
 	}
 
 	// Use connectionAddress if set (for DisableIPMode), otherwise use the original address
 	if connectionAddress == "" {
 		connectionAddress = address
 	}
+	
+	r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Final validated config to be applied: %v", validatedConfig)
+	r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Connecting to Redis at %s (original address: %s)", connectionAddress, address)
 
 	port := getRedisPort(rf.Spec.Redis.Port)
-	return r.redisClient.SetCustomRedisConfig(connectionAddress, port, validatedConfig, password)
+	err = r.redisClient.SetCustomRedisConfig(connectionAddress, port, validatedConfig, password)
+	if err != nil {
+		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Errorf("DEBUG: Failed to apply custom config to Redis at %s: %v", connectionAddress, err)
+		return err
+	}
+	
+	r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Successfully applied custom config to Redis at %s", connectionAddress)
+	return nil
 }
 
 // getRedisPodMemoryUsage retrieves the memory limit or request for a Redis pod by its address (IP or DNS)

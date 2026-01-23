@@ -294,15 +294,26 @@ func (r *RedisFailoverHandler) checkAndHealBootstrapMode(rf *redisfailoverv1.Red
 }
 
 func (r *RedisFailoverHandler) applyRedisCustomConfig(rf *redisfailoverv1.RedisFailover) error {
+	r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Starting applyRedisCustomConfig - CustomConfig: %v", rf.Spec.Redis.CustomConfig)
+	
 	redises, err := r.rfChecker.GetRedisesIPs(rf)
 	if err != nil {
+		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Errorf("DEBUG: Failed to get Redis IPs: %v", err)
 		return err
 	}
-	for _, rip := range redises {
+	
+	r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Found %d Redis instances to configure: %v", len(redises), redises)
+	
+	for i, rip := range redises {
+		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Applying custom config to Redis instance %d/%d at address %s", i+1, len(redises), rip)
 		if err := r.rfHealer.SetRedisCustomConfig(rip, rf); err != nil {
+			r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Errorf("DEBUG: Failed to set custom config on Redis %s: %v", rip, err)
 			return err
 		}
+		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Successfully applied custom config to Redis instance at address %s", rip)
 	}
+	
+	r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Completed applyRedisCustomConfig for all %d Redis instances", len(redises))
 	return nil
 }
 

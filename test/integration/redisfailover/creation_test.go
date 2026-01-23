@@ -103,8 +103,13 @@ func TestRedisFailover(t *testing.T) {
 		redisClient: redisClient,
 	}
 
+	// Create a real logger with debug level enabled for integration tests
+	testLogger := log.Base()
+	testLogger.Set("debug")
+	t.Logf("Created logger with debug level for integration tests")
+
 	// Create kubernetes service.
-	k8sservice := k8s.New(k8sClient, customClient, aeClientset, log.Dummy, metrics.Dummy)
+	k8sservice := k8s.New(k8sClient, customClient, aeClientset, testLogger, metrics.Dummy)
 
 	// Prepare namespace
 	prepErr := clients.prepareNS(currentNamespace)
@@ -114,7 +119,7 @@ func TestRedisFailover(t *testing.T) {
 	time.Sleep(15 * time.Second)
 
 	// Create operator and run.
-	redisfailoverOperator, err := redisfailover.New(redisfailover.Config{}, k8sservice, k8sClient, currentNamespace, redisClient, metrics.Dummy, log.Dummy)
+	redisfailoverOperator, err := redisfailover.New(redisfailover.Config{}, k8sservice, k8sClient, currentNamespace, redisClient, metrics.Dummy, testLogger)
 	require.NoError(err)
 
 	go func() {
@@ -236,8 +241,13 @@ func TestRedisFailoverMyMaster(t *testing.T) {
 		redisClient: redisClient,
 	}
 
+	// Create a real logger with debug level enabled for integration tests
+	testLogger := log.Base()
+	testLogger.Set("debug")
+	t.Logf("Created logger with debug level for integration tests")
+
 	// Create kubernetes service.
-	k8sservice := k8s.New(k8sClient, customClient, aeClientset, log.Dummy, metrics.Dummy)
+	k8sservice := k8s.New(k8sClient, customClient, aeClientset, testLogger, metrics.Dummy)
 
 	// Prepare namespace
 	prepErr := clients.prepareNS(currentNamespace)
@@ -247,7 +257,7 @@ func TestRedisFailoverMyMaster(t *testing.T) {
 	time.Sleep(15 * time.Second)
 
 	// Create operator and run.
-	redisfailoverOperator, err := redisfailover.New(redisfailover.Config{}, k8sservice, k8sClient, currentNamespace, redisClient, metrics.Dummy, log.Dummy)
+	redisfailoverOperator, err := redisfailover.New(redisfailover.Config{}, k8sservice, k8sClient, currentNamespace, redisClient, metrics.Dummy, testLogger)
 	require.NoError(err)
 
 	go func() {
@@ -822,8 +832,13 @@ func TestRedisFailoverDisableIPMode(t *testing.T) {
 		redisClient: redisClient,
 	}
 
+	// Create a real logger with debug level enabled for integration tests
+	testLogger := log.Base()
+	testLogger.Set("debug")
+	t.Logf("Created logger with debug level for integration tests")
+
 	// Create kubernetes service.
-	k8sservice := k8s.New(k8sClient, customClient, aeClientset, log.Dummy, metrics.Dummy)
+	k8sservice := k8s.New(k8sClient, customClient, aeClientset, testLogger, metrics.Dummy)
 
 	// Prepare namespace
 	prepErr := clients.prepareNS(currentNamespace)
@@ -833,7 +848,7 @@ func TestRedisFailoverDisableIPMode(t *testing.T) {
 	time.Sleep(15 * time.Second)
 
 	// Create operator and run.
-	redisfailoverOperator, err := redisfailover.New(redisfailover.Config{}, k8sservice, k8sClient, currentNamespace, redisClient, metrics.Dummy, log.Dummy)
+	redisfailoverOperator, err := redisfailover.New(redisfailover.Config{}, k8sservice, k8sClient, currentNamespace, redisClient, metrics.Dummy, testLogger)
 	require.NoError(err)
 
 	go func() {
@@ -885,9 +900,9 @@ func TestRedisFailoverDisableIPMode(t *testing.T) {
 	})
 
 	// Check that replica-announce-ip is configured
-	// t.Run("Check Replica Announce IP Configuration", func(t *testing.T) {
-	// 	clients.testReplicaAnnounceIP(t, currentNamespace)
-	// })
+	t.Run("Check Replica Announce IP Configuration", func(t *testing.T) {
+		clients.testReplicaAnnounceIP(t, currentNamespace)
+	})
 }
 
 func (c *clients) testCRCreationWithDisableIPMode(t *testing.T, currentNamespace string) {
@@ -1123,7 +1138,6 @@ func (c *clients) testReplicaAnnounceIP(t *testing.T, currentNamespace string) {
 		expectedDNS := fmt.Sprintf("%s-%s.%s.%s.svc.cluster.local",
 			serviceName, podOrdinal, serviceName, currentNamespace)
 
-		// Retry checking for replica-announce-ip configuration (operator may need time to set it)
 		var replicaAnnounceIP string
 		maxRetries := 10
 		retryDelay := 5 * time.Second
@@ -1141,35 +1155,24 @@ func (c *clients) testReplicaAnnounceIP(t *testing.T, currentNamespace string) {
 				continue
 			}
 
-			values, err := result.Result()
-			if err != nil {
-				if i < maxRetries-1 {
-					t.Logf("Error getting replica-announce-ip for pod %s (attempt %d/%d), retrying...: %v", pod.Name, i+1, maxRetries, err)
-					time.Sleep(retryDelay)
-					continue
-				}
-				t.Logf("Error getting replica-announce-ip for pod %s after %d attempts: %v", pod.Name, maxRetries, err)
-				continue
-			}
-
-			if len(values) >= 2 && values[1] != nil {
-				replicaAnnounceIP = fmt.Sprintf("%v", values[1])
-				if replicaAnnounceIP != "" {
-					break
-				}
-			}
-
-			if i < maxRetries-1 {
-				t.Logf("replica-announce-ip is empty for pod %s (attempt %d/%d), retrying...", pod.Name, i+1, maxRetries)
-				time.Sleep(retryDelay)
-			}
+		values, err := result.Result()
+		if err != nil {
+			t.Logf("Error getting replica-announce-ip for pod %s: %v", pod.Name, err)
+			continue
 		}
 
-		// Verify replica-announce-ip is set and correct
-		require.NotEmpty(replicaAnnounceIP, "replica-announce-ip should be configured for pod %s", pod.Name)
-		// Verify it's a DNS name (contains .svc.cluster.local)
-		assert.Contains(replicaAnnounceIP, ".svc.cluster.local", "replica-announce-ip should be a DNS name for pod %s", pod.Name)
-		assert.Equal(expectedDNS, replicaAnnounceIP, "replica-announce-ip should match expected DNS name for pod %s", pod.Name)
-		t.Logf("Pod %s has replica-announce-ip configured: %s", pod.Name, replicaAnnounceIP)
+		if len(values) >= 2 && values[1] != nil {
+			replicaAnnounceIP := fmt.Sprintf("%v", values[1])
+			// Verify it's a DNS name (contains .svc.cluster.local)
+			assert.Contains(replicaAnnounceIP, ".svc.cluster.local", "replica-announce-ip should be a DNS name for pod %s", pod.Name)
+
+			// Construct expected DNS name
+			podParts := strings.Split(pod.Name, "-")
+			podOrdinal := podParts[len(podParts)-1]
+			expectedDNS := fmt.Sprintf("%s-%s.%s.%s.svc.cluster.local",
+				serviceName, podOrdinal, serviceName, currentNamespace)
+			assert.Equal(expectedDNS, replicaAnnounceIP, "replica-announce-ip should match expected DNS name for pod %s", pod.Name)
+			t.Logf("Pod %s has replica-announce-ip configured: %s", pod.Name, replicaAnnounceIP)
+		}
 	}
 }
