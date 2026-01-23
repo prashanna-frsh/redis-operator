@@ -615,7 +615,12 @@ func TestSetRedisCustomConfigWithDisableIPMode(t *testing.T) {
 
 			mr := &mRedisService.Client{}
 			var capturedConfig []string
-			mr.On("SetCustomRedisConfig", test.address, "0", mock.MatchedBy(func(config []string) bool {
+			// When DisableIPMode is enabled, the operator should connect using IP, not DNS
+			expectedConnectionAddress := test.address
+			if test.disableIPMode && test.podReady {
+				expectedConnectionAddress = "10.0.0.1" // Pod IP
+			}
+			mr.On("SetCustomRedisConfig", expectedConnectionAddress, "0", mock.MatchedBy(func(config []string) bool {
 				capturedConfig = config
 				return true
 			}), "").Once().Return(nil)
