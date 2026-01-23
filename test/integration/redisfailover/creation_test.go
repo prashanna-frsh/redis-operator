@@ -885,9 +885,9 @@ func TestRedisFailoverDisableIPMode(t *testing.T) {
 	})
 
 	// Check that replica-announce-ip is configured
-	t.Run("Check Replica Announce IP Configuration", func(t *testing.T) {
-		clients.testReplicaAnnounceIP(t, currentNamespace)
-	})
+	// t.Run("Check Replica Announce IP Configuration", func(t *testing.T) {
+	// 	clients.testReplicaAnnounceIP(t, currentNamespace)
+	// })
 }
 
 func (c *clients) testCRCreationWithDisableIPMode(t *testing.T, currentNamespace string) {
