@@ -1155,24 +1155,26 @@ func (c *clients) testReplicaAnnounceIP(t *testing.T, currentNamespace string) {
 				continue
 			}
 
-		values, err := result.Result()
-		if err != nil {
-			t.Logf("Error getting replica-announce-ip for pod %s: %v", pod.Name, err)
-			continue
-		}
+			values, err := result.Result()
+			if err != nil {
+				t.Logf("Error getting replica-announce-ip for pod %s: %v", pod.Name, err)
+				continue
+			}
 
-		if len(values) >= 2 && values[1] != nil {
-			replicaAnnounceIP := fmt.Sprintf("%v", values[1])
-			// Verify it's a DNS name (contains .svc.cluster.local)
-			assert.Contains(replicaAnnounceIP, ".svc.cluster.local", "replica-announce-ip should be a DNS name for pod %s", pod.Name)
+			if len(values) >= 2 && values[1] != nil {
+				replicaAnnounceIP := fmt.Sprintf("%v", values[1])
+				// Verify it's a DNS name (contains .svc.cluster.local)
+				assert.Contains(replicaAnnounceIP, ".svc.cluster.local", "replica-announce-ip should be a DNS name for pod %s", pod.Name)
 
-			// Construct expected DNS name
-			podParts := strings.Split(pod.Name, "-")
-			podOrdinal := podParts[len(podParts)-1]
-			expectedDNS := fmt.Sprintf("%s-%s.%s.%s.svc.cluster.local",
-				serviceName, podOrdinal, serviceName, currentNamespace)
-			assert.Equal(expectedDNS, replicaAnnounceIP, "replica-announce-ip should match expected DNS name for pod %s", pod.Name)
-			t.Logf("Pod %s has replica-announce-ip configured: %s", pod.Name, replicaAnnounceIP)
+				// Construct expected DNS name
+				podParts := strings.Split(pod.Name, "-")
+				podOrdinal := podParts[len(podParts)-1]
+				expectedDNS := fmt.Sprintf("%s-%s.%s.%s.svc.cluster.local",
+					serviceName, podOrdinal, serviceName, currentNamespace)
+				assert.Equal(expectedDNS, replicaAnnounceIP, "replica-announce-ip should match expected DNS name for pod %s", pod.Name)
+				t.Logf("Pod %s has replica-announce-ip configured: %s", pod.Name, replicaAnnounceIP)
+				break
+			}
 		}
 	}
 }
