@@ -46,7 +46,7 @@ PORT := 9710
 # CMDs
 UNIT_TEST_CMD := go test `go list ./... | grep -v /vendor/` -v
 GO_GENERATE_CMD := go generate `go list ./... | grep -v /vendor/`
-GO_INTEGRATION_TEST_CMD := go test -v -tags=integration ./test/integration/redisfailover -run "TestRedisFailover$" -timeout 20m
+GO_INTEGRATION_TEST_CMD := go test `go list ./... | grep test/integration` -v -tags='integration' -run 'TestRedisFailoverMyMaster' -timeout=20m
 GET_DEPS_CMD := dep ensure
 LINT_CMD := golangci-lint run --timeout=15m
 LINT_NEW_CMD := golangci-lint run --timeout=15m --new-from-rev=HEAD~1
