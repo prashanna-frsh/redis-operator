@@ -27,5 +27,8 @@ then
     $SUDO chmod a+r ${HOME}/.kube/config
 fi
 
-echo "=> Running integration tests"
-go test `go list ./... | grep test/integration` -v -tags='integration'
+TEST_NAME="${1:-TestRedisFailoverMyMaster}"
+
+echo "=> Running single test: $TEST_NAME"
+cd "$REPO_ROOT"
+go test ./test/integration/redisfailover -v -tags='integration' -run "$TEST_NAME"
