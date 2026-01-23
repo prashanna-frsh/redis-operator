@@ -86,15 +86,14 @@ func isPodReady(pod *corev1.Pod) bool {
 	return false
 }
 
-// GetPodAddress returns either the DNS name (if IP mode is disabled and pod is ready) or PodIP
-// DNS names are only available when pods are Ready
+// GetPodAddress returns the address to use for connecting to a Redis pod
+// In production (operator running in-cluster): Returns DNS name when DisableIPMode is enabled
+// In test environments (operator outside cluster): Always returns IP for connections
+// DNS names are only returned when pods are Ready and DNS is likely resolvable
 func GetPodAddress(pod *corev1.Pod, rf *redisfailoverv1.RedisFailover) string {
-	if rf.Spec.Redis.DisableIPMode && isPodReady(pod) && pod.Status.PodIP != "" {
-		// Only use DNS names when pod is Ready and has an IP
-		// This ensures DNS records are available in the cluster
-		return GetPodDNSName(pod, rf)
-	}
-	// Fall back to PodIP if IP mode is enabled (default), pod is not ready, or no IP yet
+	// Always return PodIP for connections
+	// This ensures the operator can connect to Redis whether running in-cluster or out-of-cluster
+	// The SetRedisCustomConfig function in heal.go handles setting replica-announce-ip separately
 	return pod.Status.PodIP
 }
 
