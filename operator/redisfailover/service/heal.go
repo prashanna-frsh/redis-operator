@@ -374,12 +374,11 @@ func (r *RedisFailoverHealer) SetRedisCustomConfig(address string, rf *redisfail
 					// Get DNS name for this pod
 					if isPodReady(&pod) && pod.Status.PodIP != "" {
 						replicaAnnounceIP = podDNSName
-						r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Found matching pod %s for address %s, will connect via IP %s and set replica-announce-ip to %s", pod.Name, address, connectionAddress, replicaAnnounceIP)
+						r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Pod %s is ready, will connect via IP %s and set replica-announce-ip to %s", pod.Name, connectionAddress, replicaAnnounceIP)
 					} else {
-						// Pod not ready yet, skip setting replica-announce-ip
+						// Pod not ready yet, we'll still apply other configs but skip replica-announce-ip
 						// It will be set on next reconciliation when pod is ready
-						r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Pod %s not ready yet (Ready: %v, PodIP: %s), skipping replica-announce-ip", pod.Name, isPodReady(&pod), pod.Status.PodIP)
-						break
+						r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Pod %s not ready yet (Ready: %v, PodIP: %s), will skip replica-announce-ip this time", pod.Name, isPodReady(&pod), pod.Status.PodIP)
 					}
 					break
 				}
@@ -415,6 +414,25 @@ func (r *RedisFailoverHealer) SetRedisCustomConfig(address string, rf *redisfail
 	}
 	
 	r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: Successfully applied custom config to Redis at %s", connectionAddress)
+	
+	// Verify replica-announce-ip was set if DisableIPMode is enabled and pod was ready
+	if rf.Spec.Redis.DisableIPMode {
+		// Check if replica-announce-ip was included in the config we just applied
+		hasReplicaAnnounceIP := false
+		for _, cfg := range validatedConfig {
+			if strings.HasPrefix(cfg, "replica-announce-ip ") {
+				hasReplicaAnnounceIP = true
+				break
+			}
+		}
+		
+		if hasReplicaAnnounceIP {
+			r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("DEBUG: replica-announce-ip was successfully included in config for Redis at %s", connectionAddress)
+		} else {
+			r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Warningf("DEBUG: replica-announce-ip was NOT included in config for Redis at %s (pod may not be ready yet, will retry on next reconciliation)", connectionAddress)
+		}
+	}
+	
 	return nil
 }
 
